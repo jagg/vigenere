@@ -19,7 +19,7 @@ impl CipherText {
 
     pub fn from_hex(hex: &str) -> Result<CipherText, Error> {
         let cypher_bytes: Vec<u8> = try!(hex.from_hex()
-            .map_err(|e| Error::HexErr(e.to_string())));
+            .map_err(|e| Error::Hex(e.to_string())));
         Ok(CipherText(cypher_bytes))
     }
 
@@ -30,7 +30,7 @@ impl CipherText {
 
     pub fn from_b64(b64: &str) -> Result<CipherText, Error> {
         let cypher_bytes: Vec<u8> = try!(b64.from_base64()
-            .map_err(|e| Error::Base64Err(e.to_string())));
+            .map_err(|e| Error::Base64(e.to_string())));
         Ok(CipherText(cypher_bytes))
     }
 
@@ -41,9 +41,8 @@ impl CipherText {
 
     pub fn from_file(path: &str) -> Result<CipherText, Error> {
         let mut text = String::new();
-        let mut file = try!(File::open(Path::new(path))
-            .map_err(|e| Error::Base64Err(e.to_string())));
-        let mut in_file = BufReader::new(file);
+        let file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
+        let in_file = BufReader::new(file);
         for line in in_file.lines() {
             text.push_str(&line.unwrap());
         }
@@ -63,8 +62,12 @@ impl CipherText {
         let mut i = 0;
         let mut j = cmp::min(text_b64.len(), 80);
         while i != j {
-            file.write_all(&text_b64[i..j].as_bytes());
-            file.write_all("\n".as_bytes());
+            try!(file.write_all(&text_b64[i..j].as_bytes())
+                .map_err(|e| Error::File(e.to_string())));
+
+
+            try!(file.write_all("\n".as_bytes()).map_err(|e| Error::File(e.to_string())));
+
             i = j;
             j = cmp::min(text_b64.len(), j + 80);
         }
@@ -84,12 +87,11 @@ impl PlainText {
     }
 
     pub fn from_file(path: &str) -> Result<PlainText, Error> {
-        let mut file = try!(File::open(Path::new(path))
-            .map_err(|e| Error::Base64Err(e.to_string())));
+        let file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
         let mut in_file = BufReader::new(file);
         let mut text = String::new();
         try!(in_file.read_to_string(&mut text)
-            .map_err(|e| Error::Base64Err(e.to_string())));
+            .map_err(|e| Error::File(e.to_string())));
         Ok(PlainText::from_string(&text))
 
     }
@@ -97,13 +99,14 @@ impl PlainText {
     pub fn to_file(&self, path: &str) -> Result<(), Error> {
         let &PlainText(ref vec_bytes) = self;
         let mut out_file = BufWriter::new(File::create(Path::new(path)).unwrap());
-        out_file.write_all(&vec_bytes);
+        try!(out_file.write_all(&vec_bytes).map_err(|e| Error::File(e.to_string())));
+
         Ok(())
     }
 
     pub fn to_utf8(&self) -> Result<String, Error> {
         let &PlainText(ref vec_bytes) = self;
-        let plain = try!(str::from_utf8(&vec_bytes).map_err(|e| Error::UTF8Err(e.to_string())));
+        let plain = try!(str::from_utf8(&vec_bytes).map_err(|e| Error::UTF8(e.to_string())));
         Ok(plain.to_string())
     }
 }
@@ -116,27 +119,30 @@ pub fn encrypt(text: &PlainText, key: &str) -> CipherText {
 
 pub fn decrypt(cypher_text: &CipherText, key: &str) -> Result<PlainText, Error> {
     let &CipherText(ref bytes) = cypher_text;
-    let xored: Vec<u8> = repeating_xor(&bytes, key.as_bytes());
+    let xored: Vec<u8> = repeating_xor(bytes, key.as_bytes());
     Ok(PlainText::from_bytes(&xored))
 }
 
-pub fn decrypt_file(input_path: &str, output_path: &str, key: &str) {
-    let cipher = CipherText::from_file(input_path).unwrap();
-    let plain = decrypt(&cipher, key).unwrap();
-    plain.to_file(output_path);
+pub fn decrypt_file(input_path: &str, output_path: &str, key: &str) -> Result<(), Error> {
+    let cipher = try!(CipherText::from_file(input_path));
+    let plain = try!(decrypt(&cipher, key));
+    try!(plain.to_file(output_path));
+    Ok(())
 }
 
-pub fn encrypt_file(input_path: &str, output_path: &str, key: &str) {
-    let plain = PlainText::from_file(input_path).unwrap();
+pub fn encrypt_file(input_path: &str, output_path: &str, key: &str) -> Result<(), Error> {
+    let plain = try!(PlainText::from_file(input_path));
     let cipher = encrypt(&plain, key);
-    cipher.to_file(output_path);
+    try!(cipher.to_file(output_path));
+    Ok(())
 }
 
 #[derive(Debug)]
 pub enum Error {
-    HexErr(String),
-    Base64Err(String),
-    UTF8Err(String),
+    Hex(String),
+    Base64(String),
+    UTF8(String),
+    File(String),
 }
 
 fn repeating_xor(input: &[u8], key: &[u8]) -> Vec<u8> {
@@ -147,7 +153,7 @@ fn repeating_xor(input: &[u8], key: &[u8]) -> Vec<u8> {
     for (i, in_val) in input.iter().enumerate() {
         out[i] = in_val ^ key[i % key.len()];
     }
-    return out;
+    out
 }
 
 

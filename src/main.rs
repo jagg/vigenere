@@ -21,9 +21,16 @@ fn main() {
     let decrypt = matches.opt_present("d");
 
     if decrypt {
-        decrypt_file(&input, &output, &key);
+        match decrypt_file(&input, &output, &key) {
+            Ok(_) => println!("Done!"),
+            Err(err) => println!("Error found: {:?}", err),
+        }
     } else {
-        encrypt_file(&input, &output, &key);
+        match encrypt_file(&input, &output, &key) {
+            Ok(_) => println!("Done!"),
+            Err(err) => println!("Error found: {:?}", err),
+        }
+
     }
 
 }
