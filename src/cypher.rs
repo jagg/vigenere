@@ -164,10 +164,26 @@ mod tests {
 
     #[test]
     fn test_encrypt_and_decrypt() {
-        let plain_text = PlainText::from_string("This is the plain text");
+        check_text("This is the plain text");
+        check_text("123, 456");
+        check_text("!£$%^&*@~:");
+        check_text("日本語");
+    }
+
+    #[test]
+    fn test_wrong_key() {
+        let text = "This is the plain text";
+        let plain_text = PlainText::from_string(text);
         let key: &str = "toy";
-        assert_eq!(plain_text.to_utf8().unwrap(),
-                   decrypt(&encrypt(&plain_text, key), key).unwrap().to_utf8().unwrap());
+        let cipher_text = decrypt(&encrypt(&plain_text, key), "wrong_key").unwrap();
+        assert!(text != cipher_text.to_utf8().unwrap());
+    }
+
+    fn check_text(text: &str) {
+        let plain_text = PlainText::from_string(text);
+        let key: &str = "toy";
+        let cipher_text = decrypt(&encrypt(&plain_text, key), key).unwrap();
+        assert_eq!(text, cipher_text.to_utf8().unwrap());
     }
 
 }
