@@ -175,15 +175,15 @@ mod tests {
         let text = "This is the plain text";
         let plain_text = PlainText::from_string(text);
         let key: &str = "toy";
-        let cipher_text = decrypt(&encrypt(&plain_text, key), "wrong_key").unwrap();
-        assert!(text != cipher_text.to_utf8().unwrap());
+        let decoded_text = decrypt(&encrypt(&plain_text, key), "wrong_key").unwrap();
+        assert!(text != decoded_text.to_utf8().unwrap());
     }
 
     fn check_text(text: &str) {
         let plain_text = PlainText::from_string(text);
         let key: &str = "toy";
-        let cipher_text = decrypt(&encrypt(&plain_text, key), key).unwrap();
-        assert_eq!(text, cipher_text.to_utf8().unwrap());
+        let decoded_text = decrypt(&encrypt(&plain_text, key), key).unwrap();
+        assert_eq!(text, decoded_text.to_utf8().unwrap());
     }
 
 }
