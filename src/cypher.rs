@@ -8,6 +8,7 @@ use std::path::Path;
 use std::io::prelude::*;
 use std::cmp;
 use std::fs::OpenOptions;
+use std::fs;
 
 
 pub struct CipherText(Vec<u8>);
@@ -52,12 +53,18 @@ impl CipherText {
     pub fn to_file(&self, path: &str) -> Result<(), Error> {
 
         let text_b64 = self.to_b64();
-        let mut file = OpenOptions::new()
+
+        if file_exists(path) {
+            try!(fs::remove_file(path).map_err(|e| Error::File(e.to_string())));
+        }
+
+
+        let mut file = try!(OpenOptions::new()
             .write(true)
             .append(true)
             .create(true)
             .open(path)
-            .unwrap();
+            .map_err(|e| Error::File(e.to_string())));
 
         let mut i = 0;
         let mut j = cmp::min(text_b64.len(), 80);
@@ -73,6 +80,11 @@ impl CipherText {
         }
         Ok(())
     }
+}
+
+
+fn file_exists(path: &str) -> bool {
+    fs::metadata(path).is_ok()
 }
 
 pub struct PlainText(Vec<u8>);
@@ -98,7 +110,14 @@ impl PlainText {
 
     pub fn to_file(&self, path: &str) -> Result<(), Error> {
         let &PlainText(ref vec_bytes) = self;
-        let mut out_file = BufWriter::new(File::create(Path::new(path)).unwrap());
+        let file = try!(OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(path)
+            .map_err(|e| Error::File(e.to_string())));
+
+        let mut out_file = BufWriter::new(file);
         try!(out_file.write_all(&vec_bytes).map_err(|e| Error::File(e.to_string())));
 
         Ok(())
@@ -164,10 +183,19 @@ mod tests {
 
     #[test]
     fn test_encrypt_and_decrypt() {
-        check_text("This is the plain text");
+        check_text("This is the plain text\n");
         check_text("123, 456");
         check_text("!£$%^&*@~:");
         check_text("日本語");
+    }
+
+    #[test]
+    fn test_encrypt_and_decrypt_files() {
+        check_text_file("This is the plain text\n");
+        check_text_file("123, 456");
+        check_text_file("!£$%^&*@~:");
+        check_text_file("日本語");
+        check_text_file("This is the plain text\nThis is the plain text\nThis is the plain text\n");
     }
 
     #[test]
@@ -183,6 +211,21 @@ mod tests {
         let plain_text = PlainText::from_string(text);
         let key: &str = "toy";
         let decoded_text = decrypt(&encrypt(&plain_text, key), key).unwrap();
+        assert_eq!(text, decoded_text.to_utf8().unwrap());
+    }
+
+    fn check_text_file(text: &str) {
+        let plain_text = PlainText::from_string(text);
+        let key: &str = "toy";
+        let plain_path = "./target/test-plain.txt";
+        let cipher_path = "./target/test-cipher.txt";
+        let decoded_path = "./target/test-decoded.txt";
+
+        plain_text.to_file(plain_path).unwrap();
+        encrypt_file(plain_path, cipher_path, key).unwrap();
+        decrypt_file(cipher_path, decoded_path, key).unwrap();
+        let decoded_text = PlainText::from_file(decoded_path).unwrap();
+
         assert_eq!(text, decoded_text.to_utf8().unwrap());
     }
 
