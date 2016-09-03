@@ -9,7 +9,6 @@ use std::cmp;
 use std::fs::OpenOptions;
 use std::fs;
 
-
 pub struct CipherText(Vec<u8>);
 
 impl CipherText {
@@ -28,7 +27,8 @@ impl CipherText {
         vec_bytes.to_hex()
     }
 
-    pub fn from_b64(b64: &str) -> Result<CipherText, Error> {
+    pub fn from_b64<S: AsRef<str>>(b64: S) -> Result<CipherText, Error> {
+        let b64 = b64.as_ref();
         let cipher_bytes: Vec<u8> = try!(b64.from_base64()
             .map_err(|e| Error::Base64(e.to_string())));
         Ok(CipherText(cipher_bytes))
@@ -39,13 +39,8 @@ impl CipherText {
         vec_bytes.to_base64(STANDARD)
     }
 
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<CipherText, Error> {
-        let path = path.as_ref();
-        let mut file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
-        let capacity = file.metadata().ok().map_or(0, |x| x.len());
-        let mut buffer = String::with_capacity(capacity as usize);
-        try!(file.read_to_string(&mut buffer).map_err(|e| Error::File(e.to_string())));
-        CipherText::from_b64(&buffer)
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<CipherText, Error> {
+        buffer_file(path.as_ref()).and_then(CipherText::from_b64)
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
@@ -80,22 +75,16 @@ impl CipherText {
 pub struct PlainText(Vec<u8>);
 
 impl PlainText {
-    pub fn from_string(string: &str) -> PlainText {
-        PlainText(string.as_bytes().to_vec())
+    pub fn from_string<S: AsRef<str>>(string: S) -> PlainText {
+        PlainText(string.as_ref().as_bytes().to_vec())
     }
 
     pub fn from_bytes(bytes: &[u8]) -> PlainText {
         PlainText(bytes.to_vec())
     }
 
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<PlainText, Error> {
-        let path = path.as_ref();
-        let mut file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
-        let capacity = file.metadata().ok().map_or(0, |x| x.len());
-        let mut buffer = String::with_capacity(capacity as usize);
-        try!(file.read_to_string(&mut buffer).map_err(|e| Error::File(e.to_string())));
-        Ok(PlainText::from_string(&buffer))
-
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<PlainText, Error> {
+        buffer_file(path.as_ref()).map(PlainText::from_string)
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
@@ -119,6 +108,14 @@ impl PlainText {
         let plain = try!(str::from_utf8(&vec_bytes).map_err(|e| Error::UTF8(e.to_string())));
         Ok(plain.to_string())
     }
+}
+
+fn buffer_file(path: &Path) -> Result<String, Error> {
+    let mut file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
+    let capacity = file.metadata().ok().map_or(0, |x| x.len());
+    let mut buffer = String::with_capacity(capacity as usize);
+    try!(file.read_to_string(&mut buffer).map_err(|e| Error::File(e.to_string())));
+    Ok(buffer)
 }
 
 pub fn encrypt(text: &PlainText, key: &str) -> CipherText {
