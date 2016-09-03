@@ -1,7 +1,6 @@
 use rustc_serialize::hex::{ToHex, FromHex};
 use rustc_serialize::base64::{ToBase64, FromBase64, STANDARD};
 use std::str;
-use std::io::BufReader;
 use std::io::BufWriter;
 use std::fs::File;
 use std::path::Path;
@@ -40,24 +39,21 @@ impl CipherText {
         vec_bytes.to_base64(STANDARD)
     }
 
-    pub fn from_file(path: &str) -> Result<CipherText, Error> {
-        let mut text = String::new();
-        let file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
-        let in_file = BufReader::new(file);
-        for line in in_file.lines() {
-            text.push_str(&line.unwrap());
-        }
-        CipherText::from_b64(&text)
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<CipherText, Error> {
+        let path = path.as_ref();
+        let mut file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
+        let capacity = file.metadata().ok().map_or(0, |x| x.len());
+        let mut buffer = String::with_capacity(capacity as usize);
+        try!(file.read_to_string(&mut buffer).map_err(|e| Error::File(e.to_string())));
+        CipherText::from_b64(&buffer)
     }
 
-    pub fn to_file(&self, path: &str) -> Result<(), Error> {
-
+    pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        let path = path.as_ref();
         let text_b64 = self.to_b64();
-
-        if file_exists(path) {
+        if path.exists() {
             try!(fs::remove_file(path).map_err(|e| Error::File(e.to_string())));
         }
-
 
         let mut file = try!(OpenOptions::new()
             .write(true)
@@ -81,12 +77,6 @@ impl CipherText {
         Ok(())
     }
 }
-
-
-fn file_exists(path: &str) -> bool {
-    fs::metadata(path).is_ok()
-}
-
 pub struct PlainText(Vec<u8>);
 
 impl PlainText {
@@ -98,17 +88,18 @@ impl PlainText {
         PlainText(bytes.to_vec())
     }
 
-    pub fn from_file(path: &str) -> Result<PlainText, Error> {
-        let file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
-        let mut in_file = BufReader::new(file);
-        let mut text = String::new();
-        try!(in_file.read_to_string(&mut text)
-            .map_err(|e| Error::File(e.to_string())));
-        Ok(PlainText::from_string(&text))
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<PlainText, Error> {
+        let path = path.as_ref();
+        let mut file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
+        let capacity = file.metadata().ok().map_or(0, |x| x.len());
+        let mut buffer = String::with_capacity(capacity as usize);
+        try!(file.read_to_string(&mut buffer).map_err(|e| Error::File(e.to_string())));
+        Ok(PlainText::from_string(&buffer))
 
     }
 
-    pub fn to_file(&self, path: &str) -> Result<(), Error> {
+    pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        let path = path.as_ref();
         let &PlainText(ref vec_bytes) = self;
         let file = try!(OpenOptions::new()
             .write(true)
@@ -228,5 +219,4 @@ mod tests {
 
         assert_eq!(text, decoded_text.to_utf8().unwrap());
     }
-
 }
