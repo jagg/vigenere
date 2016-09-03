@@ -19,9 +19,9 @@ impl CipherText {
     }
 
     pub fn from_hex(hex: &str) -> Result<CipherText, Error> {
-        let cypher_bytes: Vec<u8> = try!(hex.from_hex()
+        let cipher_bytes: Vec<u8> = try!(hex.from_hex()
             .map_err(|e| Error::Hex(e.to_string())));
-        Ok(CipherText(cypher_bytes))
+        Ok(CipherText(cipher_bytes))
     }
 
     pub fn to_hex(&self) -> String {
@@ -30,9 +30,9 @@ impl CipherText {
     }
 
     pub fn from_b64(b64: &str) -> Result<CipherText, Error> {
-        let cypher_bytes: Vec<u8> = try!(b64.from_base64()
+        let cipher_bytes: Vec<u8> = try!(b64.from_base64()
             .map_err(|e| Error::Base64(e.to_string())));
-        Ok(CipherText(cypher_bytes))
+        Ok(CipherText(cipher_bytes))
     }
 
     pub fn to_b64(&self) -> String {
@@ -136,8 +136,8 @@ pub fn encrypt(text: &PlainText, key: &str) -> CipherText {
     CipherText::new(&xored)
 }
 
-pub fn decrypt(cypher_text: &CipherText, key: &str) -> Result<PlainText, Error> {
-    let &CipherText(ref bytes) = cypher_text;
+pub fn decrypt(cipher_text: &CipherText, key: &str) -> Result<PlainText, Error> {
+    let &CipherText(ref bytes) = cipher_text;
     let xored: Vec<u8> = repeating_xor(bytes, key.as_bytes());
     Ok(PlainText::from_bytes(&xored))
 }

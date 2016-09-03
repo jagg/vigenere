@@ -1,7 +1,7 @@
 extern crate vigenere;
 extern crate getopts;
 
-use vigenere::cypher::{decrypt_file, encrypt_file};
+use vigenere::cipher::{decrypt_file, encrypt_file};
 use getopts::*;
 use std::env;
 
