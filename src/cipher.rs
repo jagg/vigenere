@@ -1,7 +1,6 @@
 use rustc_serialize::hex::{ToHex, FromHex};
 use rustc_serialize::base64::{ToBase64, FromBase64, STANDARD};
 use std::str;
-use std::io::BufReader;
 use std::io::BufWriter;
 use std::fs::File;
 use std::path::Path;
@@ -10,6 +9,7 @@ use std::cmp;
 use std::fs::OpenOptions;
 use std::fs;
 
+enum WriteMethod { Truncate, Append }
 
 pub struct CipherText(Vec<u8>);
 
@@ -29,8 +29,8 @@ impl CipherText {
         vec_bytes.to_hex()
     }
 
-    pub fn from_b64(b64: &str) -> Result<CipherText, Error> {
-        let cipher_bytes: Vec<u8> = try!(b64.from_base64()
+    pub fn from_b64<S: AsRef<str>>(b64: S) -> Result<CipherText, Error> {
+        let cipher_bytes: Vec<u8> = try!(b64.as_ref().from_base64()
             .map_err(|e| Error::Base64(e.to_string())));
         Ok(CipherText(cipher_bytes))
     }
@@ -40,38 +40,19 @@ impl CipherText {
         vec_bytes.to_base64(STANDARD)
     }
 
-    pub fn from_file(path: &str) -> Result<CipherText, Error> {
-        let mut text = String::new();
-        let file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
-        let in_file = BufReader::new(file);
-        for line in in_file.lines() {
-            text.push_str(&line.unwrap());
-        }
-        CipherText::from_b64(&text)
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<CipherText, Error> {
+        buffer_file(path.as_ref()).and_then(CipherText::from_b64)
     }
 
-    pub fn to_file(&self, path: &str) -> Result<(), Error> {
-
+    pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
         let text_b64 = self.to_b64();
-
-        if file_exists(path) {
-            try!(fs::remove_file(path).map_err(|e| Error::File(e.to_string())));
-        }
-
-
-        let mut file = try!(OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(path)
-            .map_err(|e| Error::File(e.to_string())));
+        let mut file = try!(create_file(path.as_ref(), WriteMethod::Append));
 
         let mut i = 0;
         let mut j = cmp::min(text_b64.len(), 80);
         while i != j {
             try!(file.write_all(&text_b64[i..j].as_bytes())
                 .map_err(|e| Error::File(e.to_string())));
-
 
             try!(file.write_all("\n".as_bytes()).map_err(|e| Error::File(e.to_string())));
 
@@ -81,45 +62,26 @@ impl CipherText {
         Ok(())
     }
 }
-
-
-fn file_exists(path: &str) -> bool {
-    fs::metadata(path).is_ok()
-}
-
 pub struct PlainText(Vec<u8>);
 
 impl PlainText {
-    pub fn from_string(string: &str) -> PlainText {
-        PlainText(string.as_bytes().to_vec())
+    pub fn from_string<S: AsRef<str>>(string: S) -> PlainText {
+        PlainText(string.as_ref().as_bytes().to_vec())
     }
 
     pub fn from_bytes(bytes: &[u8]) -> PlainText {
         PlainText(bytes.to_vec())
     }
 
-    pub fn from_file(path: &str) -> Result<PlainText, Error> {
-        let file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
-        let mut in_file = BufReader::new(file);
-        let mut text = String::new();
-        try!(in_file.read_to_string(&mut text)
-            .map_err(|e| Error::File(e.to_string())));
-        Ok(PlainText::from_string(&text))
-
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<PlainText, Error> {
+        buffer_file(path.as_ref()).map(PlainText::from_string)
     }
 
-    pub fn to_file(&self, path: &str) -> Result<(), Error> {
+    pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
         let &PlainText(ref vec_bytes) = self;
-        let file = try!(OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(path)
-            .map_err(|e| Error::File(e.to_string())));
-
+        let file = try!(create_file(path.as_ref(), WriteMethod::Truncate));
         let mut out_file = BufWriter::new(file);
         try!(out_file.write_all(&vec_bytes).map_err(|e| Error::File(e.to_string())));
-
         Ok(())
     }
 
@@ -128,6 +90,40 @@ impl PlainText {
         let plain = try!(str::from_utf8(&vec_bytes).map_err(|e| Error::UTF8(e.to_string())));
         Ok(plain.to_string())
     }
+}
+
+fn buffer_file(path: &Path) -> Result<String, Error> {
+    let mut file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
+    let capacity = file.metadata().ok().map_or(0, |x| x.len());
+    let mut buffer = String::with_capacity(capacity as usize);
+    try!(file.read_to_string(&mut buffer).map_err(|e| Error::File(e.to_string())));
+    Ok(buffer)
+}
+
+fn create_file(path: &Path, method: WriteMethod) -> Result<File, Error> {
+    if path.exists() {
+        try!(fs::remove_file(path).map_err(|e| Error::File(e.to_string())));
+    }
+
+    match method {
+        WriteMethod::Append => {
+            OpenOptions::new()
+                .write(true)
+                .append(true)
+                .create(true)
+                .open(path)
+                .map_err(|e| Error::File(e.to_string()))
+        },
+        WriteMethod::Truncate => {
+            OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .create(true)
+                .open(path)
+                .map_err(|e| Error::File(e.to_string()))
+        }
+    }
+
 }
 
 pub fn encrypt(text: &PlainText, key: &str) -> CipherText {
@@ -228,5 +224,4 @@ mod tests {
 
         assert_eq!(text, decoded_text.to_utf8().unwrap());
     }
-
 }
