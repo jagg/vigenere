@@ -28,7 +28,7 @@ impl CipherText {
     }
 
     pub fn to_hex(&self) -> String {
-        let &CipherText(ref vec_bytes) = self;
+        let ref vec_bytes = self.0;
         vec_bytes.to_hex()
     }
 
@@ -38,7 +38,7 @@ impl CipherText {
     }
 
     pub fn to_b64(&self) -> String {
-        let &CipherText(ref vec_bytes) = self;
+        let ref vec_bytes = self.0;
         vec_bytes.to_base64(STANDARD)
     }
 
@@ -78,7 +78,7 @@ impl PlainText {
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
-        let &PlainText(ref vec_bytes) = self;
+        let ref vec_bytes = self.0;
         let file = try!(create_file(path.as_ref(), WriteMethod::Truncate));
         let mut out_file = BufWriter::new(file);
         try!(out_file.write_all(&vec_bytes));
@@ -86,7 +86,7 @@ impl PlainText {
     }
 
     pub fn to_utf8(&self) -> Result<String, Error> {
-        let &PlainText(ref vec_bytes) = self;
+        let ref vec_bytes = self.0;
         let plain = try!(str::from_utf8(&vec_bytes));
         Ok(plain.to_string())
     }
