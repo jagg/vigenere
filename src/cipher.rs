@@ -9,6 +9,8 @@ use std::cmp;
 use std::fs::OpenOptions;
 use std::fs;
 
+enum WriteMethod { Truncate, Append }
+
 pub struct CipherText(Vec<u8>);
 
 impl CipherText {
@@ -28,8 +30,7 @@ impl CipherText {
     }
 
     pub fn from_b64<S: AsRef<str>>(b64: S) -> Result<CipherText, Error> {
-        let b64 = b64.as_ref();
-        let cipher_bytes: Vec<u8> = try!(b64.from_base64()
+        let cipher_bytes: Vec<u8> = try!(b64.as_ref().from_base64()
             .map_err(|e| Error::Base64(e.to_string())));
         Ok(CipherText(cipher_bytes))
     }
@@ -44,25 +45,14 @@ impl CipherText {
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
-        let path = path.as_ref();
         let text_b64 = self.to_b64();
-        if path.exists() {
-            try!(fs::remove_file(path).map_err(|e| Error::File(e.to_string())));
-        }
-
-        let mut file = try!(OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(path)
-            .map_err(|e| Error::File(e.to_string())));
+        let mut file = try!(create_file(path.as_ref(), WriteMethod::Append));
 
         let mut i = 0;
         let mut j = cmp::min(text_b64.len(), 80);
         while i != j {
             try!(file.write_all(&text_b64[i..j].as_bytes())
                 .map_err(|e| Error::File(e.to_string())));
-
 
             try!(file.write_all("\n".as_bytes()).map_err(|e| Error::File(e.to_string())));
 
@@ -88,18 +78,10 @@ impl PlainText {
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
-        let path = path.as_ref();
         let &PlainText(ref vec_bytes) = self;
-        let file = try!(OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(path)
-            .map_err(|e| Error::File(e.to_string())));
-
+        let file = try!(create_file(path.as_ref(), WriteMethod::Truncate));
         let mut out_file = BufWriter::new(file);
         try!(out_file.write_all(&vec_bytes).map_err(|e| Error::File(e.to_string())));
-
         Ok(())
     }
 
@@ -116,6 +98,32 @@ fn buffer_file(path: &Path) -> Result<String, Error> {
     let mut buffer = String::with_capacity(capacity as usize);
     try!(file.read_to_string(&mut buffer).map_err(|e| Error::File(e.to_string())));
     Ok(buffer)
+}
+
+fn create_file(path: &Path, method: WriteMethod) -> Result<File, Error> {
+    if path.exists() {
+        try!(fs::remove_file(path).map_err(|e| Error::File(e.to_string())));
+    }
+
+    match method {
+        WriteMethod::Append => {
+            OpenOptions::new()
+                .write(true)
+                .append(true)
+                .create(true)
+                .open(path)
+                .map_err(|e| Error::File(e.to_string()))
+        },
+        WriteMethod::Truncate => {
+            OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .create(true)
+                .open(path)
+                .map_err(|e| Error::File(e.to_string()))
+        }
+    }
+
 }
 
 pub fn encrypt(text: &PlainText, key: &str) -> CipherText {
