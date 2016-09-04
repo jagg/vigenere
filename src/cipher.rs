@@ -1,6 +1,7 @@
-use rustc_serialize::hex::{ToHex, FromHex};
-use rustc_serialize::base64::{ToBase64, FromBase64, STANDARD};
+use rustc_serialize::hex::{ToHex, FromHex, FromHexError};
+use rustc_serialize::base64::{FromBase64Error, ToBase64, FromBase64, STANDARD};
 use std::str;
+use std::io;
 use std::io::BufWriter;
 use std::fs::File;
 use std::path::Path;
@@ -9,7 +10,10 @@ use std::cmp;
 use std::fs::OpenOptions;
 use std::fs;
 
-enum WriteMethod { Truncate, Append }
+enum WriteMethod {
+    Truncate,
+    Append,
+}
 
 pub struct CipherText(Vec<u8>);
 
@@ -19,8 +23,7 @@ impl CipherText {
     }
 
     pub fn from_hex(hex: &str) -> Result<CipherText, Error> {
-        let cipher_bytes: Vec<u8> = try!(hex.from_hex()
-            .map_err(|e| Error::Hex(e.to_string())));
+        let cipher_bytes: Vec<u8> = try!(hex.from_hex());
         Ok(CipherText(cipher_bytes))
     }
 
@@ -30,8 +33,7 @@ impl CipherText {
     }
 
     pub fn from_b64<S: AsRef<str>>(b64: S) -> Result<CipherText, Error> {
-        let cipher_bytes: Vec<u8> = try!(b64.as_ref().from_base64()
-            .map_err(|e| Error::Base64(e.to_string())));
+        let cipher_bytes: Vec<u8> = try!(b64.as_ref().from_base64());
         Ok(CipherText(cipher_bytes))
     }
 
@@ -51,10 +53,8 @@ impl CipherText {
         let mut i = 0;
         let mut j = cmp::min(text_b64.len(), 80);
         while i != j {
-            try!(file.write_all(&text_b64[i..j].as_bytes())
-                .map_err(|e| Error::File(e.to_string())));
-
-            try!(file.write_all("\n".as_bytes()).map_err(|e| Error::File(e.to_string())));
+            try!(file.write_all(&text_b64[i..j].as_bytes()));
+            try!(file.write_all("\n".as_bytes()));
 
             i = j;
             j = cmp::min(text_b64.len(), j + 80);
@@ -81,28 +81,28 @@ impl PlainText {
         let &PlainText(ref vec_bytes) = self;
         let file = try!(create_file(path.as_ref(), WriteMethod::Truncate));
         let mut out_file = BufWriter::new(file);
-        try!(out_file.write_all(&vec_bytes).map_err(|e| Error::File(e.to_string())));
+        try!(out_file.write_all(&vec_bytes));
         Ok(())
     }
 
     pub fn to_utf8(&self) -> Result<String, Error> {
         let &PlainText(ref vec_bytes) = self;
-        let plain = try!(str::from_utf8(&vec_bytes).map_err(|e| Error::UTF8(e.to_string())));
+        let plain = try!(str::from_utf8(&vec_bytes));
         Ok(plain.to_string())
     }
 }
 
 fn buffer_file(path: &Path) -> Result<String, Error> {
-    let mut file = try!(File::open(Path::new(path)).map_err(|e| Error::File(e.to_string())));
+    let mut file = try!(File::open(Path::new(path)));
     let capacity = file.metadata().ok().map_or(0, |x| x.len());
     let mut buffer = String::with_capacity(capacity as usize);
-    try!(file.read_to_string(&mut buffer).map_err(|e| Error::File(e.to_string())));
+    try!(file.read_to_string(&mut buffer));
     Ok(buffer)
 }
 
 fn create_file(path: &Path, method: WriteMethod) -> Result<File, Error> {
     if path.exists() {
-        try!(fs::remove_file(path).map_err(|e| Error::File(e.to_string())));
+        try!(fs::remove_file(path));
     }
 
     match method {
@@ -112,15 +112,15 @@ fn create_file(path: &Path, method: WriteMethod) -> Result<File, Error> {
                 .append(true)
                 .create(true)
                 .open(path)
-                .map_err(|e| Error::File(e.to_string()))
-        },
+                .map_err(|e| Error::from(e))
+        }
         WriteMethod::Truncate => {
             OpenOptions::new()
                 .write(true)
                 .truncate(true)
                 .create(true)
                 .open(path)
-                .map_err(|e| Error::File(e.to_string()))
+                .map_err(|e| Error::from(e))
         }
     }
 
@@ -160,13 +160,34 @@ pub enum Error {
     File(String),
 }
 
+impl From<FromBase64Error> for Error {
+    fn from(err: FromBase64Error) -> Error {
+        Error::Base64(err.to_string())
+    }
+}
+
+impl From<FromHexError> for Error {
+    fn from(err: FromHexError) -> Error {
+        Error::Hex(err.to_string())
+    }
+}
+
+impl From<str::Utf8Error> for Error {
+    fn from(err: str::Utf8Error) -> Error {
+        Error::UTF8(err.to_string())
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Error {
+        Error::File(err.to_string())
+    }
+}
+
 fn repeating_xor(input: &[u8], key: &[u8]) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::with_capacity(input.len());
-    unsafe {
-        out.set_len(input.len());
-    }
     for (i, in_val) in input.iter().enumerate() {
-        out[i] = in_val ^ key[i % key.len()];
+        out.push(in_val ^ key[i % key.len()]);
     }
     out
 }
@@ -192,6 +213,18 @@ mod tests {
         check_text_file("!£$%^&*@~:");
         check_text_file("日本語");
         check_text_file("This is the plain text\nThis is the plain text\nThis is the plain text\n");
+        check_text_file("dsklfshdfsfsdfsdfsdfsdfsgfssssssssssssssssssssssfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    }
+
+    #[test]
+    fn test_file_storage() {
+        check_to_from_file("This is the plain text\n");
+        check_to_from_file("123, 456");
+        check_to_from_file("!£$%^&*@~:");
+        check_to_from_file("日本語");
+        check_to_from_file("This is the plain text\nThis is the plain text\nThis is the plain \
+                            text\n");
+        check_to_from_file("dsklfshdfsfsdfsdfsdfsdfsgfssssssssssssssssssssssfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     }
 
     #[test]
@@ -201,6 +234,22 @@ mod tests {
         let key: &str = "toy";
         let decoded_text = decrypt(&encrypt(&plain_text, key), "wrong_key").unwrap();
         assert!(text != decoded_text.to_utf8().unwrap());
+    }
+
+    fn check_to_from_file(text: &str) {
+        let plain_text = PlainText::from_string(text);
+        let key: &str = "toy";
+        let cipher_text = encrypt(&plain_text, key);
+        let path = "./target/debug/test.txt";
+
+        plain_text.to_file(&path).unwrap();
+        let rec_plain = PlainText::from_file(&path).unwrap();
+        assert_eq!(plain_text.to_utf8().unwrap(), rec_plain.to_utf8().unwrap());
+
+        cipher_text.to_file(&path).unwrap();
+        let rec_cipher = CipherText::from_file(&path).unwrap();
+        assert_eq!(cipher_text.to_b64(), rec_cipher.to_b64());
+
     }
 
     fn check_text(text: &str) {
