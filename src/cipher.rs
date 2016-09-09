@@ -32,6 +32,10 @@ impl CipherText {
         vec_bytes.to_hex()
     }
 
+    pub fn as_bytes(&self) -> Vec<u8> {
+        self.0.clone()
+    }
+
     pub fn from_b64<S: AsRef<str>>(b64: S) -> Result<CipherText, Error> {
         let cipher_bytes: Vec<u8> = try!(b64.as_ref().from_base64());
         Ok(CipherText(cipher_bytes))
@@ -42,7 +46,7 @@ impl CipherText {
         vec_bytes.to_base64(STANDARD)
     }
 
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<CipherText, Error> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<CipherText, Error> {
         buffer_file(path.as_ref()).and_then(CipherText::from_b64)
     }
 
@@ -65,12 +69,20 @@ impl CipherText {
 pub struct PlainText(Vec<u8>);
 
 impl PlainText {
+    pub fn new(bytes: &[u8]) -> PlainText {
+        PlainText(bytes.to_vec())
+    }
+
     pub fn from_string<S: AsRef<str>>(string: S) -> PlainText {
         PlainText(string.as_ref().as_bytes().to_vec())
     }
 
     pub fn from_bytes(bytes: &[u8]) -> PlainText {
         PlainText(bytes.to_vec())
+    }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        self.0.clone()
     }
 
     fn from_file<P: AsRef<Path>>(path: P) -> Result<PlainText, Error> {
@@ -135,6 +147,12 @@ pub fn encrypt(text: &PlainText, key: &str) -> CipherText {
 pub fn decrypt(cipher_text: &CipherText, key: &str) -> Result<PlainText, Error> {
     let &CipherText(ref bytes) = cipher_text;
     let xored: Vec<u8> = repeating_xor(bytes, key.as_bytes());
+    Ok(PlainText::from_bytes(&xored))
+}
+
+pub fn decrypt_single_key(cipher_text: &CipherText, key: u8) -> Result<PlainText, Error> {
+    let &CipherText(ref bytes) = cipher_text;
+    let xored: Vec<u8> = repeating_xor(bytes, &vec![key]);
     Ok(PlainText::from_bytes(&xored))
 }
 
