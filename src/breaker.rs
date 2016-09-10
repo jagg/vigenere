@@ -1,4 +1,5 @@
 use super::cipher;
+use super::byte_matrix;
 use std::ops::BitAnd;
 use std::collections::BinaryHeap;
 use std::cmp::Ordering;
@@ -25,7 +26,7 @@ fn try_size(cipher: &[u8], size: i32) -> f32 {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 struct KeyScore {
-    size: i32,
+    size: u32,
     score: f32,
 }
 
@@ -43,26 +44,53 @@ impl PartialOrd for KeyScore {
     }
 }
 
+pub fn break_file(input_path: &str, output_path: &str) -> Result<(), cipher::Error> {
+    let cipher = try!(cipher::CipherText::from_file(input_path));
+    let plain = try!(decode_text(&cipher));
+    try!(plain.to_file(output_path));
+    Ok(())
+}
 
-pub fn guess_key_size(cipher: &cipher::CipherText) -> Vec<i32> {
+
+pub fn decode_text(cipher: &cipher::CipherText) -> Result<cipher::PlainText, cipher::Error> {
+
+    let mut best_score = 0;
+    let mut candidate = None;
+    let key_size_guesses = guess_key_size(cipher);
+    for key_size in key_size_guesses.iter() {
+        let plain = break_cipher(cipher, *key_size);
+        let score = score(&plain.as_bytes());
+        if score > best_score {
+            best_score = score;
+            candidate = Some(plain);
+        }
+
+    }
+    match candidate {
+        None => Err(cipher::Error::Failure("Couldn't decode text".to_string())),
+        Some(plain) => Ok(plain),
+    }
+}
+
+
+pub fn guess_key_size(cipher: &cipher::CipherText) -> Vec<u32> {
     let mut heap = BinaryHeap::new();
     let mut best = Vec::new();
-    for i in 1..40 {
+    for i in 1..20 {
         let score = try_size(&cipher.as_bytes(), i);
         heap.push(KeyScore {
-            size: i,
+            size: i as u32,
             score: score,
         });
     }
 
     let mut count = 0;
     while let Some(v) = heap.pop() {
-        println!("{:?}", v);
         if count > 10 {
             break;
         } else {
             best.push(v.size);
-            count = count + 1;
+            count += 1;
         }
     }
     best
@@ -72,7 +100,7 @@ pub fn hamming_dist(bytes1: &[u8], bytes2: &[u8]) -> i32 {
     let mut count = 0;
     for (i, val1) in bytes1.iter().enumerate() {
         let diff_bytes = val1 ^ bytes2[i];
-        count = count + count_set_bits(diff_bytes);
+        count += count_set_bits(diff_bytes);
     }
     count
 }
@@ -82,32 +110,28 @@ pub fn count_set_bits(mut byte: u8) -> i32 {
     let mut count = 0;
     while byte != 0 {
         byte = byte.bitand(byte - 1);
-        count = count + 1;
+        count += 1;
     }
     count
 }
 
 pub fn break_cipher(cipher: &cipher::CipherText, key_size: u32) -> cipher::PlainText {
-    let bytes = cipher.as_bytes();
-    let mut vectors: Vec<Vec<u8>> = Vec::new();
-    let mut plaintexts: Vec<cipher::PlainText> = Vec::new();
-    for i in (1..key_size + 1) {
-        vectors.push(Vec::new());
-    }
-    for (i, byte) in bytes.iter().enumerate() {
-        vectors[i % key_size as usize].push(*byte);
-    }
-    for (_, vec) in vectors.iter().enumerate() {
-        plaintexts.push(decode_single_key(&cipher::CipherText::new(vec)));
-    }
-    reassemble(&plaintexts)
+    let matrix = byte_matrix::ByteMatrix::transpose(&cipher.as_bytes(), key_size as usize);
+    let matrix = matrix.transform(|vec: &Vec<u8>| {
+        let cipher = cipher::CipherText::new(vec);
+        let plain = decode_single_key(&cipher);
+        plain.as_bytes()
+    });
+    let decoded = matrix.reassemble();
+    let plain = cipher::PlainText::new(&decoded);
+    plain
 }
 
 pub fn decode_single_key(cipher: &cipher::CipherText) -> cipher::PlainText {
     let mut plain = None;
     let mut best_score = 0;
-    for key in (0...255_u8) {
-        let candidate = cipher::decrypt_single_key(&cipher, key).unwrap();
+    for key in 0...255_u8 {
+        let candidate = cipher::decrypt_single_key(cipher, key).unwrap();
         let score = score(&candidate.as_bytes());
         if score > best_score {
             best_score = score;
@@ -115,17 +139,6 @@ pub fn decode_single_key(cipher: &cipher::CipherText) -> cipher::PlainText {
         }
     }
     plain.unwrap()
-}
-
-fn reassemble(plain_texts: &Vec<cipher::PlainText>) -> cipher::PlainText {
-
-    let mut bytes: Vec<u8> = Vec::new();
-    for i in (0..plain_texts.len()) {
-        for (_, text) in plain_texts.iter().enumerate() {
-            bytes.push(text.as_bytes()[i]);
-        }
-    }
-    cipher::PlainText::new(&bytes)
 }
 
 // Measures the number of lowercase characters
@@ -194,7 +207,7 @@ mod tests {
     fn check_guess_key(text: &str, key: &str) {
         let plain = cipher::PlainText::from_string(text);
         let cipher = cipher::encrypt(&plain, key);
-        assert!(guess_key_size(&cipher).contains(&(key.len() as i32)));
+        assert!(guess_key_size(&cipher).contains(&(key.len() as u32)));
     }
 
     fn check_break(text: &str, key: &str) {

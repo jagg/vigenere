@@ -28,7 +28,7 @@ impl CipherText {
     }
 
     pub fn to_hex(&self) -> String {
-        let ref vec_bytes = self.0;
+        let vec_bytes = &self.0;
         vec_bytes.to_hex()
     }
 
@@ -42,7 +42,7 @@ impl CipherText {
     }
 
     pub fn to_b64(&self) -> String {
-        let ref vec_bytes = self.0;
+        let vec_bytes = &self.0;
         vec_bytes.to_base64(STANDARD)
     }
 
@@ -90,7 +90,7 @@ impl PlainText {
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
-        let ref vec_bytes = self.0;
+        let vec_bytes = &self.0;
         let file = try!(create_file(path.as_ref(), WriteMethod::Truncate));
         let mut out_file = BufWriter::new(file);
         try!(out_file.write_all(&vec_bytes));
@@ -98,7 +98,7 @@ impl PlainText {
     }
 
     pub fn to_utf8(&self) -> Result<String, Error> {
-        let ref vec_bytes = self.0;
+        let vec_bytes = &self.0;
         let plain = try!(str::from_utf8(&vec_bytes));
         Ok(plain.to_string())
     }
@@ -124,7 +124,7 @@ fn create_file(path: &Path, method: WriteMethod) -> Result<File, Error> {
                 .append(true)
                 .create(true)
                 .open(path)
-                .map_err(|e| Error::from(e))
+                .map_err(Error::from)
         }
         WriteMethod::Truncate => {
             OpenOptions::new()
@@ -132,7 +132,7 @@ fn create_file(path: &Path, method: WriteMethod) -> Result<File, Error> {
                 .truncate(true)
                 .create(true)
                 .open(path)
-                .map_err(|e| Error::from(e))
+                .map_err(Error::from)
         }
     }
 
@@ -152,7 +152,7 @@ pub fn decrypt(cipher_text: &CipherText, key: &str) -> Result<PlainText, Error> 
 
 pub fn decrypt_single_key(cipher_text: &CipherText, key: u8) -> Result<PlainText, Error> {
     let &CipherText(ref bytes) = cipher_text;
-    let xored: Vec<u8> = repeating_xor(bytes, &vec![key]);
+    let xored: Vec<u8> = repeating_xor(bytes, &[key]);
     Ok(PlainText::from_bytes(&xored))
 }
 
@@ -176,6 +176,7 @@ pub enum Error {
     Base64(String),
     UTF8(String),
     File(String),
+    Failure(String),
 }
 
 impl From<FromBase64Error> for Error {
