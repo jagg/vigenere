@@ -5,7 +5,7 @@ use std::collections::BinaryHeap;
 use std::cmp::Ordering;
 use std::f32;
 
-fn try_size(cipher: &[u8], size: i32) -> f32 {
+fn calc_size_score(cipher: &[u8], size: i32) -> f32 {
 
     let b1 = &cipher[0..size as usize];
     let b2 = &cipher[size as usize..2 * size as usize];
@@ -76,8 +76,8 @@ pub fn decode_text(cipher: &cipher::CipherText) -> Result<cipher::PlainText, cip
 pub fn guess_key_size(cipher: &cipher::CipherText) -> Vec<u32> {
     let mut heap = BinaryHeap::new();
     let mut best = Vec::new();
-    for i in 1..20 {
-        let score = try_size(&cipher.as_bytes(), i);
+    for i in 1..40 {
+        let score = calc_size_score(&cipher.as_bytes(), i);
         heap.push(KeyScore {
             size: i as u32,
             score: score,
@@ -86,7 +86,7 @@ pub fn guess_key_size(cipher: &cipher::CipherText) -> Vec<u32> {
 
     let mut count = 0;
     while let Some(v) = heap.pop() {
-        if count > 10 {
+        if count > 3 {
             break;
         } else {
             best.push(v.size);
@@ -174,9 +174,8 @@ mod tests {
         check_break_single("This should be a simple test", "1");
         check_break_single("En un lugar de la mancha", "9");
 
-        check_break("This should be a simple test, since we know the size. Something wasn't long \
-                     enough, so we should investigate a little bit more",
-                    "pipi");
+        check_break("This should be a simple test with a not too long text",
+                    "ace");
 
     }
 
@@ -200,7 +199,7 @@ mod tests {
                          aunque, por conjeturas verosímiles, se deja entender que se llamaba \
                          Quejana. Pero esto importa poco a nuestro cuento; basta que en la \
                          narración dél no se salga un punto de la verdad.",
-                        "pipi");
+                        "caracol");
 
     }
 
