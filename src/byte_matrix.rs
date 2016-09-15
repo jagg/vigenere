@@ -8,7 +8,7 @@ pub struct ByteMatrix {
 
 
 impl ByteMatrix {
-    pub fn transpose(vector: &[u8], size: usize) -> ByteMatrix {
+    pub fn to_matrix(vector: &[u8], size: usize) -> ByteMatrix {
         let mut vectors: Vec<Vec<u8>> = Vec::new();
         for _ in 1..size + 1 {
             vectors.push(Vec::new());
@@ -60,23 +60,23 @@ mod tests {
     use std::str;
 
     #[test]
-    fn test_transpose_and_back() {
+    fn test_to_matrix_and_back() {
 
-        check_transpose_and_back("lalalala", 2);
-        check_transpose_and_back("lalalal", 2);
-        check_transpose_and_back("lalala", 2);
+        check_to_matrix_and_back("lalalala", 2);
+        check_to_matrix_and_back("lalalal", 2);
+        check_to_matrix_and_back("lalala", 2);
 
-        check_transpose_and_back("this is a Random test to see if it works", 3);
-        check_transpose_and_back("Let's try this again", 7);
-        check_transpose_and_back("And another time to see what happens", 2);
+        check_to_matrix_and_back("this is a Random test to see if it works", 3);
+        check_to_matrix_and_back("Let's try this again", 7);
+        check_to_matrix_and_back("And another time to see what happens", 2);
 
-        check_transpose_and_back("A", 3);
-        check_transpose_and_back("And another time to see what happens", 1);
+        check_to_matrix_and_back("A", 3);
+        check_to_matrix_and_back("And another time to see what happens", 1);
 
     }
 
-    fn check_transpose_and_back(text: &str, size: usize) {
-        let matrix = ByteMatrix::transpose(text.as_bytes(), size);
+    fn check_to_matrix_and_back(text: &str, size: usize) {
+        let matrix = ByteMatrix::to_matrix(text.as_bytes(), size);
         let bytes = matrix.reassemble();
         let out = str::from_utf8(&bytes).unwrap();
         assert_eq!(text, out);

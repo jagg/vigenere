@@ -4,6 +4,8 @@ use std::ops::BitAnd;
 use std::collections::BinaryHeap;
 use std::cmp::Ordering;
 use std::f32;
+use std::thread;
+use std::sync::mpsc;
 
 fn calc_size_score(cipher: &[u8], size: i32) -> f32 {
 
@@ -46,9 +48,43 @@ impl PartialOrd for KeyScore {
 
 pub fn break_file(input_path: &str, output_path: &str) -> Result<(), cipher::Error> {
     let cipher = try!(cipher::CipherText::from_file(input_path));
-    let plain = try!(decode_text(&cipher));
+    let plain = try!(decode_text_parallel(cipher));
     try!(plain.to_file(output_path));
     Ok(())
+}
+
+pub fn decode_text_parallel(cipher: cipher::CipherText) -> Result<cipher::PlainText, cipher::Error> {
+
+    let mut best_score = 0;
+    let mut candidate = None;
+    let key_size_guesses = guess_key_size(&cipher);
+
+    let (tx, rx) = mpsc::channel();
+
+    for key_size in key_size_guesses.iter() {
+        let tx = tx.clone();
+        let cipher = cipher.clone();
+        let key_size = *key_size;
+        thread::spawn(move || {
+            let plain = break_cipher(&cipher, key_size);
+            let score = score(&plain.as_bytes());
+            tx.send((plain, score)).unwrap();
+        });
+    }
+
+
+    for _key_size in key_size_guesses.iter() {
+        let (plain, score) = rx.recv().unwrap();
+        if score > best_score {
+            best_score = score;
+            candidate = Some(plain);
+        }
+    }
+
+    match candidate {
+        None => Err(cipher::Error::Failure("Couldn't decode text".to_string())),
+        Some(plain) => Ok(plain),
+    }
 }
 
 
@@ -116,7 +152,7 @@ pub fn count_set_bits(mut byte: u8) -> i32 {
 }
 
 pub fn break_cipher(cipher: &cipher::CipherText, key_size: u32) -> cipher::PlainText {
-    let matrix = byte_matrix::ByteMatrix::transpose(&cipher.as_bytes(), key_size as usize);
+    let matrix = byte_matrix::ByteMatrix::to_matrix(&cipher.as_bytes(), key_size as usize);
     let matrix = matrix.transform(|vec: &Vec<u8>| {
         let cipher = cipher::CipherText::new(vec);
         let plain = decode_single_key(&cipher);
@@ -141,9 +177,8 @@ pub fn decode_single_key(cipher: &cipher::CipherText) -> cipher::PlainText {
     plain.unwrap()
 }
 
-// Measures the number of lowercase characters
 fn score(input: &[u8]) -> u32 {
-    input.iter().fold(0, |acc, b| {
+    input.iter().take(100).fold(0, |acc, b| {
         if *b >= 97 && *b <= 122 {
             acc + 1
         } else if *b >= 33 && *b <= 64 && acc > 0 {

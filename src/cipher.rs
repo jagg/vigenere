@@ -15,6 +15,7 @@ enum WriteMethod {
     Append,
 }
 
+#[derive(Clone, Debug)]
 pub struct CipherText(Vec<u8>);
 
 impl CipherText {
@@ -66,6 +67,8 @@ impl CipherText {
         Ok(())
     }
 }
+
+#[derive(Clone, Debug)]
 pub struct PlainText(Vec<u8>);
 
 impl PlainText {
